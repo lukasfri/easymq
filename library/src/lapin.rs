@@ -1,4 +1,4 @@
-use std::{fmt::Debug, pin::Pin};
+use std::pin::Pin;
 
 use futures_lite::{Stream, StreamExt};
 use lapin::{
@@ -7,10 +7,10 @@ use lapin::{
     BasicProperties, Channel as LapinChannel, Consumer as LapinLibConsumer, Queue as LapinQueue,
 };
 
-use crate::{Consumer, Producer, QueueDeclaration};
+use crate::{AmqpConsumerError, AmqpQueueDeclaration, AmqpQueueInformation, Consumer, Producer};
 
-// Extend the QueueDeclaration struct with lapin-related methods
-impl<'a, T> QueueDeclaration<'a, T> {
+// Extend the AmqpQueueDeclaration struct with lapin-related methods
+impl<'a> AmqpQueueInformation<'a> {
     async fn create_lapin_consumer(
         &self,
         channel: &LapinChannel,
@@ -42,21 +42,25 @@ impl<'a, T> QueueDeclaration<'a, T> {
 
 pub struct LapinProducer<'a, 'c, T, S: Fn(T) -> Vec<u8>> {
     channel: &'c LapinChannel,
-    queue_declaration: QueueDeclaration<'a, T>,
+    queue_information: AmqpQueueInformation<'a>,
     serializer: S,
+    marker: std::marker::PhantomData<T>,
 }
-impl<'a, 'c, T: Send + Sync, S: (Fn(T) -> Vec<u8>) + Send + Sync> LapinProducer<'a, 'c, T, S> {
-    pub async fn new(
+impl<'a, 'c, T: Send + Sync> LapinProducer<'a, 'c, T, fn(T) -> Vec<u8>> {
+    pub async fn new<DError>(
         channel: &'c LapinChannel,
-        queue_declaration: QueueDeclaration<'a, T>,
-        serializer: S,
-    ) -> Result<LapinProducer<'a, 'c, T, S>, lapin::Error> {
-        queue_declaration.declare_lapin_queue(channel).await?;
+        queue_declaration: AmqpQueueDeclaration<'a, T, DError>,
+    ) -> Result<LapinProducer<'a, 'c, T, fn(T) -> Vec<u8>>, lapin::Error> {
+        queue_declaration
+            .information
+            .declare_lapin_queue(channel)
+            .await?;
 
         Ok(Self {
             channel,
-            queue_declaration,
-            serializer,
+            queue_information: queue_declaration.information,
+            serializer: queue_declaration.serializer,
+            marker: std::marker::PhantomData,
         })
     }
 }
@@ -73,8 +77,8 @@ impl<'a, 'c, T: Send + Sync, S: (Fn(T) -> Vec<u8>) + Send + Sync> Producer<T>
         let _confirm = self
             .channel
             .basic_publish(
-                self.queue_declaration.exchange,
-                self.queue_declaration.routing_key,
+                self.queue_information.exchange,
+                self.queue_information.routing_key,
                 BasicPublishOptions::default(),
                 payload.as_slice(),
                 BasicProperties::default().with_delivery_mode(2),
@@ -91,31 +95,41 @@ pub struct LapinConsumer<T, DError, D: Fn(Vec<u8>) -> Result<T, DError>> {
     deserializer: D,
 }
 
-impl<'a, T, DError, D: Fn(Vec<u8>) -> Result<T, DError>> LapinConsumer<T, DError, D> {
+impl<'a, T, DError> LapinConsumer<T, DError, fn(Vec<u8>) -> Result<T, DError>> {
     pub async fn new(
         channel: &LapinChannel,
-        queue_declaration: QueueDeclaration<'a, T>,
-        deserializer: D,
+        queue_declaration: AmqpQueueDeclaration<'a, T, DError>,
         consumer_tag: &str,
-    ) -> Result<LapinConsumer<T, DError, D>, lapin::Error> {
+    ) -> Result<LapinConsumer<T, DError, fn(Vec<u8>) -> Result<T, DError>>, lapin::Error> {
         let consumer = queue_declaration
+            .information
             .create_lapin_consumer(channel, consumer_tag)
             .await?;
 
         Ok(Self {
             consumer,
-            deserializer,
+            deserializer: queue_declaration.deserializer,
         })
     }
 }
 
-impl<'a, T: Send + Sync, DError: Debug, D: Fn(Vec<u8>) -> Result<T, DError> + Send + Sync>
-    Consumer<'a, T> for LapinConsumer<T, DError, D>
+impl<
+        'a,
+        T: Send + Sync,
+        DError: Send + Sync,
+        D: Fn(Vec<u8>) -> Result<T, DError> + Send + Sync,
+    > Consumer<'a, T, DError> for LapinConsumer<T, DError, D>
 where
     Self: 'a,
 {
     type Error = lapin::Error;
-    type Stream = Pin<Box<dyn Stream<Item = Option<Result<T, Self::Error>>> + Send + 'a>>;
+    type Stream = Pin<
+        Box<
+            dyn Stream<Item = Option<Result<T, AmqpConsumerError<Self::Error, DError>>>>
+                + Send
+                + 'a,
+        >,
+    >;
 
     fn to_stream(&'a mut self) -> Self::Stream {
         Box::pin(async_stream::stream! {
@@ -131,7 +145,7 @@ where
                 Ok(delivery) => delivery,
                 Err(err) => {
 
-                  yield Some(Err(err));
+                  yield Some(Err(AmqpConsumerError::ConsumerError(err)));
                   continue;
 
                 }
@@ -139,13 +153,21 @@ where
 
               match delivery.ack(BasicAckOptions::default()).await {
                 Ok(()) => (),
-                Err(ack) => {
-                  yield Some(Err(ack));
+                Err(err) => {
+                  yield Some(Err(AmqpConsumerError::ConsumerError(err)));
                   continue;
                 }
               };
 
-              let value = (self.deserializer)(delivery.data).unwrap();
+              let value = match (self.deserializer)(delivery.data) {
+                Ok(value) => value,
+                Err(err) => {
+
+                  yield Some(Err(AmqpConsumerError::DeserializationError(err)));
+                  continue;
+
+                }
+              };
 
               yield Some(Ok(value));
           }

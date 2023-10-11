@@ -1,18 +1,26 @@
-use std::marker::PhantomData;
-
 use async_trait::async_trait;
 use futures_lite::Stream;
 
+#[derive(Debug, Clone, Copy)]
+pub struct AmqpQueueInformation<'a> {
+    pub queue_name: &'a str,
+    pub exchange: &'a str,
+    pub routing_key: &'a str,
+}
+
+pub struct AmqpQueueDeclaration<'a, T, DError> {
+    pub information: AmqpQueueInformation<'a>,
+    pub serializer: fn(T) -> Vec<u8>,
+    pub deserializer: fn(Vec<u8>) -> Result<T, DError>,
+}
+
+pub enum AmqpConsumerError<CError, DError> {
+    ConsumerError(CError),
+    DeserializationError(DError),
+}
+
 #[cfg(feature = "lapin")]
 pub mod lapin;
-
-#[derive(Debug, Clone, Copy)]
-pub struct QueueDeclaration<'a, T> {
-    queue_name: &'a str,
-    exchange: &'a str,
-    routing_key: &'a str,
-    marker: PhantomData<T>,
-}
 
 #[async_trait]
 pub trait Producer<T> {
@@ -21,9 +29,9 @@ pub trait Producer<T> {
     async fn publish(&self, value: T) -> Result<(), Self::Error>;
 }
 
-pub trait Consumer<'a, T> {
+pub trait Consumer<'a, T, DError> {
     type Error;
-    type Stream: Stream<Item = Option<Result<T, Self::Error>>> + 'a
+    type Stream: Stream<Item = Option<Result<T, AmqpConsumerError<Self::Error, DError>>>> + 'a
     where
         Self: 'a;
 
