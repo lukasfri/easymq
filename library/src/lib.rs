@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use futures_lite::Stream;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AmqpQueueInformation<'a> {
@@ -14,8 +15,11 @@ pub struct AmqpQueueDeclaration<'a, T, DError> {
     pub deserializer: fn(Vec<u8>) -> Result<T, DError>,
 }
 
+#[derive(Debug, Error)]
 pub enum AmqpConsumerError<CError, DError> {
+    #[error("Consumer error: {0}")]
     ConsumerError(CError),
+    #[error("Deserialization error: {0}")]
     DeserializationError(DError),
 }
 
