@@ -96,21 +96,25 @@ pub fn hooks_lapin_producer(
         data_types.push(data_type);
     }
 
-    let name = Ident::new(&format!("{}LapinProducer", trait_ident), Span::call_site());
+    let impl_trait_ident = Ident::new(&trait_ident.to_string(), Span::call_site());
+    let producer_name = Ident::new(&format!("{}LapinProducer", trait_ident), Span::call_site());
 
     quote! {
-        #vis struct #name {
+        #vis struct #producer_name {
             #(#method_names: #data_types),*
         }
 
-        #[async_trait::async_trait]
-        impl #trait_ident for #name {
-        #(
-            async fn #method_names(&mut self, #method_names: #data_types) {
+        impl #producer_name {
+            async fn new(&mut self) {
                 todo!()
             }
-        )*
+        }
 
+        #[async_trait::async_trait]
+        impl #impl_trait_ident for #producer_name {
+            #(async fn #method_names(&mut self, #method_names: #data_types) {
+                todo!()
+            })*
         }
     }
     .into()
