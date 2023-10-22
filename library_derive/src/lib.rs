@@ -3,9 +3,7 @@ use darling::export::NestedMeta;
 use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{
-    parse2, spanned::Spanned, FnArg, Ident, ItemTrait, ReturnType, TraitItem, TraitItemFn, Type,
-};
+use syn::{parse2, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
 struct LapinHooksArgs {
@@ -64,20 +62,6 @@ pub fn hooks_lapin_producer(
             }
             .into();
         };
-
-        let ReturnType::Type(_, ty) = sig.output else {
-            return quote_spanned! {
-                sig.fn_token.span =>
-                compile_error!("Function must have return type of Pin<Box<dyn Future>>.");
-            }
-            .into();
-        };
-
-        return quote_spanned! {
-            ty.span() =>
-            compile_error!("Function must return Result. Type: {}", ty);
-        }
-        .into();
 
         let mut inputs = sig.inputs.into_iter();
 
