@@ -3,7 +3,7 @@ use darling::export::NestedMeta;
 use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{parse2, FnArg, Ident, ImplItem, ItemTrait, TraitItem, TraitItemFn, Type};
+use syn::{parse2, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
 struct LapinHooksArgs {
@@ -30,14 +30,16 @@ impl LapinHooksArgs {
     }
 }
 
-#[proc_macro_derive(HooksLapinProducer)]
-pub fn lapin_hooks(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_attribute]
+pub fn hooks_lapin_producer(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let _args = match LapinHooksArgs::parse(TokenStream::from(attr)) {
+        Ok(val) => val,
+        Err(err) => return err.into(),
+    };
     let item = TokenStream::from(item);
-
-    // let args = match LapinHooksArgs::parse(attr) {
-    //     Ok(val) => val,
-    //     Err(err) => return err.into(),
-    // };
 
     let ItemTrait {
         ident: trait_ident,
