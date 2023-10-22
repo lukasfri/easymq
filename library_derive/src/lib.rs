@@ -3,7 +3,9 @@ use darling::export::NestedMeta;
 use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{parse2, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type};
+use syn::{
+    parse2, spanned::Spanned, FnArg, Ident, ItemTrait, ReturnType, TraitItem, TraitItemFn, Type,
+};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
 struct LapinHooksArgs {
@@ -45,6 +47,7 @@ pub fn hooks_lapin_producer(
         ident: trait_ident,
         vis,
         items,
+        brace_token,
         ..
     } = parse2(item)
         .unwrap_or_else(|_| unimplemented!("Typestate can only be created using enums."));
@@ -52,28 +55,35 @@ pub fn hooks_lapin_producer(
     let mut method_names: Vec<Ident> = Vec::new();
     let mut data_types: Vec<Type> = Vec::new();
 
+    #[allow(clippy::never_loop)]
     for method in items {
         let TraitItem::Fn(TraitItemFn { sig, .. }) = method else {
             return quote_spanned! {
-                trait_ident.span() =>
-                compile_error!("Items on trait must only be ", e);
+                brace_token.span =>
+                compile_error!("Items on trait must only be functions.", e);
             }
             .into();
         };
 
-        let Some(_) = sig.asyncness else {
+        let ReturnType::Type(_, ty) = sig.output else {
             return quote_spanned! {
-                sig.ident.span() =>
+                sig.fn_token.span =>
                 compile_error!("Function must be async.");
             }
             .into();
         };
 
+        return quote_spanned! {
+            ty.span() =>
+            compile_error!("Function must return Result. Type: {}", ty);
+        }
+        .into();
+
         let mut inputs = sig.inputs.into_iter();
 
         let Some(FnArg::Receiver(self_arg)) = inputs.next() else {
             return quote_spanned! {
-                sig.ident.span() =>
+                sig.paren_token.span =>
                 compile_error!("Functions must have self argument.");
             }
             .into();
@@ -81,7 +91,7 @@ pub fn hooks_lapin_producer(
 
         if self_arg.mutability.is_none() {
             return quote_spanned! {
-                sig.ident.span() =>
+                self_arg.self_token.span =>
                 compile_error!("Functions must have mutable self argument.");
             }
             .into();
@@ -89,7 +99,7 @@ pub fn hooks_lapin_producer(
 
         let Some(FnArg::Typed(data_arg)) = inputs.next() else {
             return quote_spanned! {
-                sig.ident.span() =>
+                self_arg.self_token.span =>
                 compile_error!("Functions must have data argument.");
             }
             .into();
