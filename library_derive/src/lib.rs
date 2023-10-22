@@ -68,7 +68,7 @@ pub fn hooks_lapin_producer(
         let ReturnType::Type(_, ty) = sig.output else {
             return quote_spanned! {
                 sig.fn_token.span =>
-                compile_error!("Function must be async.");
+                compile_error!("Function must have return type of Pin<Box<dyn Future>>.");
             }
             .into();
         };
