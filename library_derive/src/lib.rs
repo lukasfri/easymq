@@ -5,7 +5,8 @@ use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    parse2, spanned::Spanned, Expr, ExprPath, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type,
+    parse2, spanned::Spanned, Expr, ExprLit, ExprPath, FnArg, Ident, ItemTrait, Lit, TraitItem,
+    TraitItemFn, Type,
 };
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
@@ -62,7 +63,7 @@ pub fn hooks_lapin_producer(
 
     let mut method_names: Vec<Ident> = Vec::new();
     let mut data_types: Vec<Type> = Vec::new();
-    let mut route_declarations: Vec<ExprPath> = Vec::new();
+    let mut route_declarations: Vec<Ident> = Vec::new();
 
     #[allow(clippy::never_loop)]
     for method in items {
@@ -119,11 +120,14 @@ pub fn hooks_lapin_producer(
 
         let route_declaration = match route_declaration.meta {
             syn::Meta::NameValue(nv) => match nv.value {
-                Expr::Path(path) => path,
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(lit_str),
+                    ..
+                }) => lit_str.value(),
                 _ => {
                     return quote_spanned! {
                         nv.value.span() =>
-                        compile_error!(r#"Value should be the path of a route."#);
+                        compile_error!(r#"Value should be the path of a route wrapped in quotes."#);
                     }
                     .into();
                 }
@@ -139,7 +143,7 @@ pub fn hooks_lapin_producer(
 
         method_names.push(method_name);
         data_types.push(data_type);
-        route_declarations.push(route_declaration);
+        route_declarations.push(Ident::new(route_declaration.as_str(), Span::call_site()));
     }
 
     let impl_trait_ident = Ident::new(&trait_ident.to_string(), Span::call_site());
