@@ -47,7 +47,7 @@ pub fn hooks_lapin_producer(
         items,
         brace_token,
         ..
-    } = parse2(item)
+    } = parse2(item.clone())
         .unwrap_or_else(|_| unimplemented!("Typestate can only be created using enums."));
 
     let mut method_names: Vec<Ident> = Vec::new();
@@ -100,12 +100,14 @@ pub fn hooks_lapin_producer(
     let producer_name = Ident::new(&format!("{}LapinProducer", trait_ident), Span::call_site());
 
     quote! {
+        #item
+
         #vis struct #producer_name {
             #(#method_names: #data_types),*
         }
 
         impl #producer_name {
-            async fn new(&mut self) {
+            async fn new(channel: &::lapin::Channel) {
                 todo!()
             }
         }
