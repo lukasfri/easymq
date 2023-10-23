@@ -1,9 +1,12 @@
 extern crate proc_macro;
+
 use darling::export::NestedMeta;
 use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{parse2, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type};
+use syn::{
+    parse2, spanned::Spanned, Expr, ExprPath, FnArg, Ident, ItemTrait, TraitItem, TraitItemFn, Type,
+};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
 struct LapinHooksArgs {
@@ -52,10 +55,11 @@ pub fn hooks_lapin_producer(
 
     let mut method_names: Vec<Ident> = Vec::new();
     let mut data_types: Vec<Type> = Vec::new();
+    let mut route_declarations: Vec<ExprPath> = Vec::new();
 
     #[allow(clippy::never_loop)]
     for method in items {
-        let TraitItem::Fn(TraitItemFn { sig, .. }) = method else {
+        let TraitItem::Fn(TraitItemFn { sig, attrs, .. }) = method else {
             return quote_spanned! {
                 brace_token.span =>
                 compile_error!("Items on trait must only be functions.", e);
@@ -92,8 +96,43 @@ pub fn hooks_lapin_producer(
         let method_name = sig.ident;
         let data_type = data_arg.ty.as_ref().clone();
 
+        const AMQP_ROUTE_ATTRIBUTE: &str = "amqp_route";
+        let Some(route_declaration) = attrs.into_iter().find(|attr| {
+            attr.meta
+                .path()
+                .get_ident()
+                .is_some_and(|path_ident| *path_ident == AMQP_ROUTE_ATTRIBUTE)
+        }) else {
+            return quote_spanned! {
+                trait_ident.span() =>
+                compile_error!(r#"Every function must have an "amqp_route" attribute."#);
+            }
+            .into();
+        };
+
+        let route_declaration = match route_declaration.meta {
+            syn::Meta::NameValue(nv) => match nv.value {
+                Expr::Path(path) => path,
+                _ => {
+                    return quote_spanned! {
+                        nv.value.span() =>
+                        compile_error!(r#"Value should be the path of a route."#);
+                    }
+                    .into();
+                }
+            },
+            _ => {
+                return quote_spanned! {
+                    route_declaration.meta.span().span() =>
+                    compile_error!(r#""amqp_route" attribute should be a name-value attribute."#);
+                }
+                .into();
+            }
+        };
+
         method_names.push(method_name);
         data_types.push(data_type);
+        route_declarations.push(route_declaration);
     }
 
     let impl_trait_ident = Ident::new(&trait_ident.to_string(), Span::call_site());
@@ -102,20 +141,25 @@ pub fn hooks_lapin_producer(
     quote! {
         #item
 
-        #vis struct #producer_name {
-            #(#method_names: #data_types),*
+        #vis struct #producer_name<'c> {
+            #(#method_names: LapinProducer<'static, 'c, #data_types, fn(#data_types) -> Vec<u8>>,)*
         }
 
         impl #producer_name {
-            async fn new(channel: &::lapin::Channel) {
-                todo!()
+            async fn new(channel: &'c ::lapin::Channel) -> Result<#producer_name<'c>, ::lapin::Error> {
+                Ok(Self {
+                    #(#method_names: LapinProducer::new(channel, #route_declarations).await?,)*
+                })
             }
         }
 
         #[async_trait::async_trait]
         impl #impl_trait_ident for #producer_name {
             #(async fn #method_names(&mut self, #method_names: #data_types) {
-                todo!()
+                self.#method_names
+                    .publish(#method_names)
+                    .await
+                    .expect("TODO fix error handling")
             })*
         }
     }
