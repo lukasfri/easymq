@@ -5,8 +5,8 @@ use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    parse2, spanned::Spanned, Expr, ExprLit, ExprPath, FnArg, Ident, ItemTrait, Lit, TraitItem,
-    TraitItemFn, Type,
+    parse2, spanned::Spanned, Expr, ExprLit, ExprPath, FnArg, Ident, ItemTrait, Lit, LitStr,
+    TraitItem, TraitItemFn, Type,
 };
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
@@ -134,7 +134,7 @@ pub fn hooks_lapin_producer(
                 .is_some_and(|path_ident| *path_ident == AMQP_ROUTE_ATTRIBUTE)
         }) else {
             return quote_spanned! {
-                trait_ident.span() =>
+                method_name.span() =>
                 compile_error!(r#"Every function must have an "amqp_route" attribute."#);
             }
             .into();
@@ -172,13 +172,21 @@ pub fn hooks_lapin_producer(
     }
 
     let impl_trait_ident = Ident::new(&trait_ident.to_string(), Span::call_site());
-    let producer_name = Ident::new(&format!("{}LapinProducer", trait_ident), Span::call_site());
+    let producer_name_string = format!("{}LapinProducer", trait_ident);
+    let producer_name = Ident::new(&producer_name_string, Span::call_site());
+    let producer_name_str = LitStr::new(&producer_name_string, Span::call_site());
 
     quote! {
         #item
 
         #vis struct #producer_name<'c> {
             #(#method_names: ::easymq::lapin::LapinProducer<'static, 'c, #data_types, fn(#data_types) -> Vec<u8>>,)*
+        }
+
+        impl<'c> ::std::fmt::Debug for #producer_name<'c> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::DebugStruct::finish(&mut ::std::fmt::Formatter::debug_struct(f, #producer_name_str))
+            }
         }
 
         impl<'c> #producer_name<'c> {
