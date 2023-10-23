@@ -178,13 +178,13 @@ pub fn hooks_lapin_producer(
         #item
 
         #vis struct #producer_name<'c> {
-            #(#method_names: ::easy_mq::lapin::LapinProducer<'static, 'c, #data_types, fn(#data_types) -> Vec<u8>>,)*
+            #(#method_names: ::easymq::lapin::LapinProducer<'static, 'c, #data_types, fn(#data_types) -> Vec<u8>>,)*
         }
 
         impl<'c> #producer_name<'c> {
             async fn new(channel: &'c ::lapin::Channel) -> Result<#producer_name<'c>, ::lapin::Error> {
                 Ok(Self {
-                    #(#method_names: ::easy_mq::lapin::LapinProducer::new(channel, #route_declarations).await?,)*
+                    #(#method_names: ::easymq::lapin::LapinProducer::new(channel, #route_declarations).await?,)*
                 })
             }
         }
@@ -192,7 +192,7 @@ pub fn hooks_lapin_producer(
         #[async_trait::async_trait]
         impl<'c> #impl_trait_ident for #producer_name<'c> {
             #(async fn #method_names(&mut self, #method_names: #data_types) {
-                ::easy_mq::Producer::<#data_types>::publish(&self.#method_names, #method_names)
+                ::easymq::Producer::<#data_types>::publish(&self.#method_names, #method_names)
                     .await
                     .expect("TODO fix error handling")
             })*
