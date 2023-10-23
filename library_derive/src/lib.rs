@@ -18,6 +18,11 @@ struct LapinHooksArgs {
     pub trait_name: Option<syn::Ident>,
 }
 
+#[derive(Debug, Default, Eq, PartialEq, FromMeta)]
+struct AmqpRouteArgs {
+    pub path: Option<syn::Ident>,
+}
+
 impl LapinHooksArgs {
     pub fn parse(attr: TokenStream) -> Result<Self, TokenStream> {
         let attr_args = NestedMeta::parse_meta_list(attr).map_err(|e| quote_spanned! {
@@ -33,6 +38,23 @@ impl LapinHooksArgs {
         })
     }
 }
+
+impl AmqpRouteArgs {
+    pub fn parse(attr: TokenStream) -> Result<Self, TokenStream> {
+        let attr_args = NestedMeta::parse_meta_list(attr).map_err(|e| quote_spanned! {
+            e.span() =>
+                compile_error!(format!("Meta from attribute could not be parsed: {}", e).as_str());
+        })?;
+
+        AmqpRouteArgs::from_list(&attr_args).map_err(|e| {
+            quote_spanned! {
+                e.span() =>
+                compile_error!("Args could not be parsed from meta: {}", e);
+            }
+        })
+    }
+}
+
 #[proc_macro_attribute]
 pub fn amqp_route(
     _attr: proc_macro::TokenStream,
@@ -118,32 +140,35 @@ pub fn hooks_lapin_producer(
             .into();
         };
 
+        let route_declaration_span = route_declaration.meta.span();
+
         let route_declaration = match route_declaration.meta {
-            syn::Meta::NameValue(nv) => match nv.value {
-                Expr::Lit(ExprLit {
-                    lit: Lit::Str(lit_str),
-                    ..
-                }) => lit_str.value(),
-                _ => {
-                    return quote_spanned! {
-                        nv.value.span() =>
-                        compile_error!(r#"Value should be the path of a route wrapped in quotes."#);
-                    }
-                    .into();
-                }
-            },
+            syn::Meta::List(nv) => nv,
             _ => {
                 return quote_spanned! {
-                    route_declaration.meta.span().span() =>
-                    compile_error!(r#""amqp_route" attribute should be a name-value attribute."#);
+                    route_declaration_span =>
+                    compile_error!(r#""amqp_route" attribute should be a list attribute - #[amqp_route(path = "...")]."#);
                 }
                 .into();
             }
         };
 
+        let route_declaration_meta = match AmqpRouteArgs::parse(route_declaration.tokens) {
+            Ok(val) => val,
+            Err(err) => return err.into(),
+        };
+
+        let Some(route_declaration) = route_declaration_meta.path else {
+            return quote_spanned! {
+                route_declaration_span =>
+                compile_error!(r#""amqp_route" attribute should have a path variable - #[amqp_route(path = "...")]."#);
+            }
+            .into();
+        };
+
         method_names.push(method_name);
         data_types.push(data_type);
-        route_declarations.push(Ident::new(route_declaration.as_str(), Span::call_site()));
+        route_declarations.push(route_declaration);
     }
 
     let impl_trait_ident = Ident::new(&trait_ident.to_string(), Span::call_site());
