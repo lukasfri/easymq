@@ -299,7 +299,7 @@ pub fn hooks_lapin_consumer(
             async fn run(&mut self) -> Result<(), AmqpConsumerError<::lapin::Error, ::serde_json::Error>> {
                 #(let mut #method_names = ::easymq::Consumer::to_stream(&mut self.#method_names);)*
         
-                select! {
+                ::futures::select! {
                 #(
                     result = #method_names.next() => {
                         let Some(result) = result else {
