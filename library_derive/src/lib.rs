@@ -301,7 +301,7 @@ pub fn hooks_lapin_consumer(
         
                 ::futures::select! {
                 #(
-                    result = #method_names.next() => {
+                    result = ::futures::StreamExt::next(&mut #method_names) => {
                         let Some(result) = result else {
                             return Ok(());
                         };
