@@ -35,7 +35,7 @@ pub trait Producer<T> {
 
 pub trait Consumer<'a, T, DError> {
     type Error;
-    type Stream: Stream<Item = Option<Result<T, AmqpConsumerError<Self::Error, DError>>>> + 'a
+    type Stream: Stream<Item = Result<T, AmqpConsumerError<Self::Error, DError>>> + 'a
     where
         Self: 'a;
 
