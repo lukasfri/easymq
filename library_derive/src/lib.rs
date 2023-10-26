@@ -217,7 +217,7 @@ pub fn hooks_lapin_producer(
         }
 
         impl<'c> #producer_name<'c> {
-            async fn new(channel: &'c ::lapin::Channel) -> Result<#producer_name<'c>, ::lapin::Error> {
+            pub async fn new(channel: &'c ::lapin::Channel) -> Result<#producer_name<'c>, ::lapin::Error> {
                 Ok(Self {
                     #(#method_names: ::easymq::lapin::LapinProducer::new(channel, #route_declarations).await?,)*
                 })
@@ -285,7 +285,7 @@ pub fn hooks_lapin_consumer(
         }
 
         impl<'a, TConsumer: #impl_trait_ident + Sync + Send> #consumer_name<'a, TConsumer> {
-            async fn new(
+            pub async fn new(
                 consumer: &'a mut TConsumer,
                 channel: &'a ::lapin::Channel,
                 consumer_tag: &str,
@@ -296,7 +296,7 @@ pub fn hooks_lapin_consumer(
                 })
             }
 
-            async fn run(&mut self) -> Result<(), ::easymq::AmqpConsumerError<::lapin::Error, ::serde_json::Error>> {
+            pub async fn run(&mut self) -> Result<(), ::easymq::AmqpConsumerError<::lapin::Error, ::serde_json::Error>> {
                 #(let mut #method_names = ::easymq::Consumer::to_stream(&mut self.#method_names);)*
         
                 ::futures::select! {
