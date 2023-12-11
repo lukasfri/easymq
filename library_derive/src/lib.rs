@@ -270,6 +270,11 @@ pub fn hooks_lapin_consumer(
     let consumer_name = Ident::new(&consumer_name_string, Span::call_site());
     let consumer_name_str = LitStr::new(&consumer_name_string, Span::call_site());
 
+    let method_name_literals = method_names.iter().map(|method_name| {
+        let method_name_string = method_name.to_string();
+        LitStr::new(&method_name_string, Span::call_site())
+    });
+
     quote! {
         #item
 
@@ -292,7 +297,7 @@ pub fn hooks_lapin_consumer(
             ) -> Result<#consumer_name<'a, TConsumer>, ::lapin::Error> {
                 Ok(Self {
                     consumer,
-                    #(#method_names: ::easymq::lapin::LapinConsumer::new(channel, #route_declarations, &format!("{}.{}", consumer_tag, #method_names)).await?,)*
+                    #(#method_names: ::easymq::lapin::LapinConsumer::new(channel, #route_declarations, &format!("{}.{}", consumer_tag, #method_name_literals)).await?,)*
                 })
             }
 
