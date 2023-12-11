@@ -292,7 +292,7 @@ pub fn hooks_lapin_consumer(
             ) -> Result<#consumer_name<'a, TConsumer>, ::lapin::Error> {
                 Ok(Self {
                     consumer,
-                    #(#method_names: ::easymq::lapin::LapinConsumer::new(channel, #route_declarations, consumer_tag).await?,)*
+                    #(#method_names: ::easymq::lapin::LapinConsumer::new(channel, #route_declarations, &format!("{}.{}", consumer_tag, #method_names)).await?,)*
                 })
             }
 
