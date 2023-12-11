@@ -123,13 +123,8 @@ where
     Self: 'a,
 {
     type Error = lapin::Error;
-    type Stream = Pin<
-        Box<
-            dyn Stream<Item = Option<Result<T, AmqpConsumerError<Self::Error, DError>>>>
-                + Send
-                + 'a,
-        >,
-    >;
+    type Stream =
+        Pin<Box<dyn Stream<Item = Result<T, AmqpConsumerError<Self::Error, DError>>> + Send + 'a>>;
 
     fn to_stream(&'a mut self) -> Self::Stream {
         Box::pin(async_stream::stream! {
@@ -137,24 +132,21 @@ where
               let delivery = self.consumer.next().await;
 
               let Some(delivery) = delivery else {
-                yield None;
-                continue;
+                break;
               };
 
               let delivery = match delivery {
                 Ok(delivery) => delivery,
                 Err(err) => {
-
-                  yield Some(Err(AmqpConsumerError::ConsumerError(err)));
+                  yield Err(AmqpConsumerError::ConsumerError(err));
                   continue;
-
                 }
               };
 
               match delivery.ack(BasicAckOptions::default()).await {
                 Ok(()) => (),
                 Err(err) => {
-                  yield Some(Err(AmqpConsumerError::ConsumerError(err)));
+                  yield Err(AmqpConsumerError::ConsumerError(err));
                   continue;
                 }
               };
@@ -162,14 +154,12 @@ where
               let value = match (self.deserializer)(delivery.data) {
                 Ok(value) => value,
                 Err(err) => {
-
-                  yield Some(Err(AmqpConsumerError::DeserializationError(err)));
+                  yield Err(AmqpConsumerError::DeserializationError(err));
                   continue;
-
                 }
               };
 
-              yield Some(Ok(value));
+              yield Ok(value);
           }
         })
     }
